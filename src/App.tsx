@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import GraphViewer, { GraphNode, GraphLink } from './components/GraphViewer';
 
 type GraphData = {
@@ -23,10 +23,16 @@ function App() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      console.log('ingest response:', data);
       if (!data?.nodes || !data?.links) throw new Error('Bad payload from backend');
       if ((data as any).error) throw new Error((data as any).error);
       setGraphData(data as GraphData);
+
+      // Connect WS after initial load
+      const ws = new WebSocket("ws://127.0.0.1:8000/updates");
+      ws.onmessage = (event) => {
+        const update = JSON.parse(event.data);
+        setGraphData(update);
+      };
     } catch (e: any) {
       setErr(e?.message || 'Unknown error');
     } finally {
@@ -68,11 +74,7 @@ function App() {
         </div>
       )}
 
-      {err && (
-        <div style={{ padding: '0.5rem 1rem', background: '#7a2222' }}>
-          {err}
-        </div>
-      )}
+      {err && <div style={{ padding: '0.5rem 1rem', background: '#7a2222' }}>{err}</div>}
 
       {graphData && (
         <>

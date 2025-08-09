@@ -3,7 +3,6 @@ import re
 import random
 from pathlib import Path
 
-# Parse lots of languages, but you can trim for speed if needed
 SUPPORTED_EXTENSIONS = ('.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.cpp', '.c', '.h', '.cs')
 IGNORE_DIRS = {'node_modules', '.git', '__pycache__', 'build', 'dist', '.next', '.expo', '.gradle'}
 
@@ -31,7 +30,6 @@ def parse_file(filepath: str, repo_root: str):
     links = []
     rel_path = str(Path(filepath).relative_to(repo_root))
 
-    # File node
     file_node = {"id": rel_path, "type": "file"}
     nodes.append(file_node)
 
@@ -39,14 +37,12 @@ def parse_file(filepath: str, repo_root: str):
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
 
-        # Classes
         for pattern in PATTERNS["class"]:
             for match in pattern.findall(content):
                 cid = f"{rel_path}::{match}"
                 nodes.append({"id": cid, "type": f"class:{match}"})
                 links.append({"source": rel_path, "target": cid})
 
-        # Functions
         for pattern in PATTERNS["function"]:
             for match in pattern.findall(content):
                 name = match.strip()
@@ -55,7 +51,6 @@ def parse_file(filepath: str, repo_root: str):
                     nodes.append({"id": fid, "type": f"function:{name}"})
                     links.append({"source": rel_path, "target": fid})
 
-        # Imports (internal or external)
         for pattern in PATTERNS["import"]:
             for match in pattern.findall(content):
                 imp = match.strip()
@@ -66,7 +61,6 @@ def parse_file(filepath: str, repo_root: str):
                 nodes.append({"id": target, "type": node_type})
                 links.append({"source": rel_path, "target": target})
 
-        # Extends/inheritance
         for pattern in PATTERNS["extends"]:
             for match in pattern.findall(content):
                 base = match.strip()
@@ -80,25 +74,15 @@ def parse_file(filepath: str, repo_root: str):
     return nodes, links
 
 def resolve_import(import_path: str, repo_root: str) -> str:
-    """
-    Try to resolve import to a file in the repo.
-    If not found, return the original string (treated as external).
-    """
-    # Relative-like or bare module names → try common resolutions
-    candidates = []
-
-    # if './foo' or '../bar' or 'src/foo'
     if import_path.startswith(('.', '/', '@')):
         base = import_path
     else:
-        # bare module (react, axios, etc.) → it will be external
         return import_path
 
-    # Try with extensions
+    candidates = []
     if not base.endswith(tuple(SUPPORTED_EXTENSIONS)):
         for ext in SUPPORTED_EXTENSIONS:
             candidates.append(base.replace('.', '/') + ext)
-        # Index files
         for ext in SUPPORTED_EXTENSIONS:
             candidates.append(os.path.join(base.replace('.', '/'), f"index{ext}"))
     else:
@@ -109,10 +93,10 @@ def resolve_import(import_path: str, repo_root: str) -> str:
         if full.exists():
             return str(full.relative_to(repo_root))
 
-    return import_path  # external
+    return import_path
 
 def build_graph(repo_path: str):
-    all_nodes = {}   # id -> node
+    all_nodes = {}
     all_links = []
 
     for root, dirs, files in os.walk(repo_path):
@@ -121,18 +105,15 @@ def build_graph(repo_path: str):
             if file.endswith(SUPPORTED_EXTENSIONS):
                 filepath = os.path.join(root, file)
                 nodes, links = parse_file(filepath, repo_path)
-
                 for n in nodes:
                     nid = n["id"]
                     if nid not in all_nodes:
-                        # random initial position so things don't stack
                         n["x"] = random.uniform(-600, 600)
                         n["y"] = random.uniform(-600, 600)
                         n["z"] = random.uniform(-600, 600)
                         all_nodes[nid] = n
                 all_links.extend(links)
 
-    # Deduplicate links (optional)
     seen = set()
     deduped_links = []
     for l in all_links:
@@ -142,3 +123,25 @@ def build_graph(repo_path: str):
             deduped_links.append(l)
 
     return {"nodes": list(all_nodes.values()), "links": deduped_links}
+
+def build_graph_incremental(repo_path: str, changed_files: list[str]):
+    if not changed_files:
+        return build_graph(repo_path)
+
+    all_nodes = {}
+    all_links = []
+
+    for file in changed_files:
+        filepath = Path(repo_path) / file
+        if filepath.exists() and filepath.suffix in SUPPORTED_EXTENSIONS:
+            nodes, links = parse_file(str(filepath), repo_path)
+            for n in nodes:
+                nid = n["id"]
+                if nid not in all_nodes:
+                    n["x"] = random.uniform(-600, 600)
+                    n["y"] = random.uniform(-600, 600)
+                    n["z"] = random.uniform(-600, 600)
+                    all_nodes[nid] = n
+            all_links.extend(links)
+
+    return {"nodes": list(all_nodes.values()), "links": all_links}
