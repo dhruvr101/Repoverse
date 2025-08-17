@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import GraphViewer, { GraphNode, GraphLink } from './components/GraphViewer';
+import { useCallback } from 'react';
 
 type GraphData = {
   nodes: GraphNode[];
@@ -11,6 +12,28 @@ function App() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [code, setCode] = useState<string>('');
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  // Fetch code for a node (file or file::symbol)
+  const fetchCode = useCallback(async (node: GraphNode) => {
+    setCode('');
+    setCodeError(null);
+    setCodeLoading(true);
+    try {
+      // For now, only support file nodes (id = path)
+      let filePath = node.id.split('::')[0];
+      const res = await fetch(`http://127.0.0.1:8000/code?path=${encodeURIComponent(filePath)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setCode(data.code || '');
+    } catch (e: any) {
+      setCodeError(e?.message || 'Unknown error');
+    } finally {
+      setCodeLoading(false);
+    }
+  }, []);
 
   const handleIngest = async () => {
     setLoading(true);
@@ -83,7 +106,32 @@ function App() {
               New Repo
             </button>
           </div>
-          <GraphViewer nodes={graphData.nodes} links={graphData.links} />
+          <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
+            <div style={{ flex: 2, minWidth: 0 }}>
+              <GraphViewer
+                nodes={graphData.nodes}
+                links={graphData.links}
+                onNodeSelect={async (node: GraphNode) => {
+                  setSelectedNode(node);
+                  await fetchCode(node);
+                }}
+                selectedNode={selectedNode}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, background: '#181828', color: '#eaeafd', borderLeft: '1px solid #333', padding: 0, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid #333', fontWeight: 700, fontSize: 16 }}>
+                {selectedNode ? selectedNode.id : 'No node selected'}
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', fontFamily: 'monospace', fontSize: 13, padding: 16 }}>
+                {codeLoading && <div>Loading code…</div>}
+                {codeError && <div style={{ color: '#ff6b6b' }}>{codeError}</div>}
+                {!codeLoading && !codeError && code && (
+                  <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{code}</pre>
+                )}
+                {!codeLoading && !codeError && !code && <div style={{ opacity: 0.7 }}>No code to display.</div>}
+              </div>
+            </div>
+          </div>
         </>
       )}
     </div>

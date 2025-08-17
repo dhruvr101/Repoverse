@@ -1,3 +1,50 @@
+# All imports at the top
+import os
+import shutil
+import uuid
+import subprocess
+import hmac
+import hashlib
+from fastapi.responses import JSONResponse
+from pathlib import Path
+from fastapi import FastAPI, Request, HTTPException, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from parser import build_graph, build_graph_incremental
+# ===== Code fetch endpoint =====
+
+# ===== Config =====
+TEMP_DIR = "/tmp/dev-graph-temp"
+os.makedirs(TEMP_DIR, exist_ok=True)
+GITHUB_SECRET = os.getenv("GITHUB_SECRET", "mysecret")
+REPO_DIR = os.path.join(TEMP_DIR, "live-repo")
+
+# ===== App setup =====
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can lock this down later
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ===== /code endpoint (moved here so 'app' is defined) =====
+@app.get("/code")
+def get_code(path: str):
+    # Only allow files inside the repo
+    abs_path = Path(REPO_DIR) / path
+    try:
+        abs_path = abs_path.resolve()
+        if not str(abs_path).startswith(str(Path(REPO_DIR).resolve())):
+            return JSONResponse({"error": "Invalid path"}, status_code=400)
+        if not abs_path.exists() or not abs_path.is_file():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+        with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
+            code = f.read()
+        return {"code": code}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 from fastapi import FastAPI, Request, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel

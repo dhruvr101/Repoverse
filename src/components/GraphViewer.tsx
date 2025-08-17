@@ -15,6 +15,8 @@ export type GraphLink = { source: string; target: string };
 type Props = {
   nodes: GraphNode[];
   links: GraphLink[];
+  onNodeSelect?: (node: GraphNode) => void;
+  selectedNode?: GraphNode | null;
 };
 
 /**
@@ -27,7 +29,7 @@ type Props = {
  * - Glow-y 3D spheres for better depth perception
  * - Legend for types (so it’s not “random dots”)
  */
-export default function GraphViewer({ nodes, links }: Props) {
+export default function GraphViewer({ nodes, links, onNodeSelect, selectedNode }: Props) {
   const fgRef = useRef<any>(null);
 
   // ---- Color palette (high-contrast, vibrant) ----
@@ -77,7 +79,9 @@ export default function GraphViewer({ nodes, links }: Props) {
 
   // ---- Interaction state ----
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [internalSelectedNode, setInternalSelectedNode] = useState<GraphNode | null>(null);
+  // Use controlled selectedNode if provided
+  const selNode = selectedNode !== undefined ? selectedNode : internalSelectedNode;
 
   // Precompute highlight sets for hover/selection
   const { highlightNodes, highlightLinks } = useMemo(() => {
@@ -86,7 +90,7 @@ export default function GraphViewer({ nodes, links }: Props) {
     const pushNode = (id: string) => hNodes.add(id);
     const pushLink = (a: string, b: string) => hLinks.add(`${a}->${b}`);
 
-    const seed = selectedNode || hoverNode;
+    const seed = selNode || hoverNode;
     if (seed) {
       pushNode(seed.id);
       (neighborsMap.get(seed.id) || new Set()).forEach(n => {
@@ -100,8 +104,8 @@ export default function GraphViewer({ nodes, links }: Props) {
 
   // Optionally filter to 1-hop neighborhood when selected (focus mode)
   const focusedData = useMemo(() => {
-    if (!selectedNode) return { nodes, links };
-    const keep = new Set<string>([selectedNode.id, ...(neighborsMap.get(selectedNode.id) || new Set())]);
+    if (!selNode) return { nodes, links };
+    const keep = new Set<string>([selNode.id, ...(neighborsMap.get(selNode.id) || new Set())]);
     const fNodes = nodes.filter(n => keep.has(n.id));
     const fLinks = links.filter(l => {
       const s = typeof l.source === 'string' ? l.source : (l.source as any).id;
@@ -109,7 +113,7 @@ export default function GraphViewer({ nodes, links }: Props) {
       return keep.has(s) && keep.has(t);
     });
     return { nodes: fNodes, links: fLinks };
-  }, [nodes, links, selectedNode, neighborsMap]);
+  }, [nodes, links, selNode, neighborsMap]);
 
   // Zoom to fit after render
 useEffect(() => {
@@ -253,7 +257,11 @@ useEffect(() => {
         backgroundColor="#0b0b14"
         onNodeHover={(n: any) => setHoverNode(n || null)}
         onNodeClick={(n: any, event: any) => {
-          setSelectedNode(n);
+          if (onNodeSelect) {
+            onNodeSelect(n);
+          } else {
+            setInternalSelectedNode(n);
+          }
           // smooth zoom to the node
           const distance = 160;
           const distRatio = 1 + distance / Math.hypot(n.x || 0, n.y || 0, n.z || 0);
@@ -263,7 +271,13 @@ useEffect(() => {
             800
           );
         }}
-        onBackgroundClick={() => setSelectedNode(null)}
+        onBackgroundClick={() => {
+          if (onNodeSelect) {
+            onNodeSelect(null as any);
+          } else {
+            setInternalSelectedNode(null);
+          }
+        }}
       />
 
       {/* Top-left controls */}
@@ -279,7 +293,13 @@ useEffect(() => {
         }}
       >
         <button
-          onClick={() => setSelectedNode(null)}
+          onClick={() => {
+            if (onNodeSelect) {
+              onNodeSelect(null as any);
+            } else {
+              setInternalSelectedNode(null);
+            }
+          }}
           style={{
             padding: '6px 10px',
             borderRadius: 10,
@@ -350,7 +370,7 @@ useEffect(() => {
       )}
 
       {/* Bottom-left hint when focused */}
-      {selectedNode && (
+      {selNode && (
         <div
           style={{
             position: 'absolute',
@@ -364,7 +384,7 @@ useEffect(() => {
             zIndex: 2,
           }}
         >
-          Focused on <b>{selectedNode.id}</b> — showing 1-hop neighborhood. Click background or “Reset View” to exit.
+          Focused on <b>{selNode.id}</b> — showing 1-hop neighborhood. Click background or “Reset View” to exit.
         </div>
       )}
     </div>
